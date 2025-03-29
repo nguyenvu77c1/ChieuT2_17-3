@@ -2,6 +2,8 @@ var express = require('express');
 var router = express.Router();
 let userController = require('../controllers/users');
 const { check_authentication } = require('../Utils/check_auth');
+let crypto = require('crypto')
+let mailMiddleware = require('../Utils/sendMail')
 
 router.post('/signup', async function(req, res, next) {
     try {
@@ -19,85 +21,59 @@ router.post('/signup', async function(req, res, next) {
       } catch (error) {
         next(error);
       }
+
 })
-
 router.post('/login', async function(req, res, next) {
-  try {
-      let username = req.body.username;
-      let password = req.body.password;
-      let result = await userController.checkLogin(username, password);
-      res.status(200).send({
-          success: true,
-          data: result
-      });
-  } catch (error) {
-      next(error);
-  }
-});
+    try {
+        let username = req.body.username;
+        let password = req.body.password;
+        let result = await userController.checkLogin(username,password);
+        res.status(200).send({
+            success:true,
+            data:result
+        })
+      } catch (error) {
+        next(error);
+      }
 
-router.get('/me', check_authentication, async function(req, res, next){
+})
+router.get('/me',check_authentication, async function(req, res, next){
     try {
       res.status(200).send({
         success:true,
         data:req.user
     })
     } catch (error) {
-        next(error);
+        next();
     }
 })
+router.post('/forgotpasswood',async function(req,res,next){
+  let body = req.body;
+  let email = body.email;
+  let user = await userController.getUserByEmail(email);
+  user.resetPasswordToken = crypto.randomBytes(32).toString('hex');
+  user.resetPasswordTokenExp = new Date(Date.now()+ 30*60*1000).getTime();
+  await user.save();
+  let url = `http://localhost:3000/auth/changepasswordforgot/${user.resetPasswordToken}`;
+  let result = await mailMiddleware.sendmail(user.email,"link tim lai mk",url)
+  res.send({
+    message:`da gui thanh cong`
+  })
+})
+router.post('/changepasswordforgot/:token',async function(req,res,next){
+  let body = req.body;
+  let token = req.params.token;
+  let password = body.password
+  let user = await userController.getUserByToken(token)
+  if(user.resetPasswordTokenExp>Date.now()){
+    user.password = password;
+    user.resetPasswordToken = null;
+    user.resetPasswordTokenExp = null;
+    await user.save();
+    res.send("da up date password")
+  }else{
+    res.send("token khong chinh xac")
+  }
+})
 
-// Route reset password (chỉ admin)
-router.get('/resetPassword/:id', check_authentication, async function(req, res, next) {
-    try {
-        // Kiểm tra xem user hiện tại có phải admin không
-        if (req.user.role !== 'admin') {
-            return res.status(403).send({
-                success: false,
-                message: 'Only admin can reset password'
-            });
-        }
-
-        const userId = req.params.id;
-        const newPassword = '123456';
-        
-        // Gọi hàm update password từ controller
-        let result = await userController.updatePassword(userId, newPassword);
-        
-        res.status(200).send({
-            success: true,
-            message: 'Password has been reset to 123456',
-            data: result
-        });
-    } catch (error) {
-        next(error);
-    }
-});
-
-// Route đổi password
-router.post('/changePassword', check_authentication, async function(req, res, next) {
-    try {
-        const { currentPassword, newPassword } = req.body;
-        
-        // Kiểm tra currentPassword có khớp với password hiện tại không
-        const isMatch = await userController.verifyPassword(req.user.id, currentPassword);
-        if (!isMatch) {
-            return res.status(400).send({
-                success: false,
-                message: 'Current password is incorrect'
-            });
-        }
-
-        // Update password mới
-        let result = await userController.updatePassword(req.user.id, newPassword);
-        
-        res.status(200).send({
-            success: true,
-            message: 'Password has been changed successfully',
-            data: result
-        });
-    } catch (error) {
-        next(error);
-    }
-});
-
-module.exports = router;
+module.exports = router

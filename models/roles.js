@@ -13,4 +13,5 @@ let roleSchema = mongoose.Schema({
 },{
     timestamps:true
 })
-module.exports =  mongoose.model('role',roleSchema)
+module.exports =  mongoose.model('role',roleSchema )
+   
